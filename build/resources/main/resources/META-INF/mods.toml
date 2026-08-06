@@ -1,0 +1,14 @@
+﻿modLoader="javafml"
+loaderVersion="[>=61]"
+license="MIT"
+
+[[mods]]
+modId="netmusic_radio_addon"
+version="0.0.1"
+displayName="NetMusic Radio Addon"
+description='A radio station search and playback addon that depends on NetMusic.'
+
+[[dependencies.netmusic_radio_addon]]
+modId="netmusic"
+mandatory=true
+versionRange="[0.0.0,)"

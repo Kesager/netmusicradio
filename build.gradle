@@ -1,0 +1,51 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        maven { url = 'https://maven.parchmentmc.org' }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '[6.0.16,6.2)', changing: true
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'java'
+
+version = '0.0.1'
+group = 'com.github.tartaricacid'
+archivesBaseName = 'netmusic-radio-addon'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    // Use official Mojang mappings for simpler setup in this template
+    mappings channel: 'official', version: '1.20.1'
+}
+
+repositories {
+    maven { url = 'https://maven.minecraftforge.net' }
+    maven { url = 'https://maven.parchmentmc.org' }
+    mavenCentral()
+    flatDir { dir "../NetMusic/libs" }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.1.0'
+    // compile only dependency on NetMusic jar to allow compile against its API
+    compileOnly files('../NetMusic/build/libs/netmusic-1.5.1-forge+mc1.20.1.jar')
+    // JSON library used by RadioBrowser client
+    implementation 'com.google.code.gson:gson:2.10.1'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/mods.toml') {
+        expand project: project, version: project.version
+    }
+}
