@@ -135,20 +135,21 @@ Adding Libraries to Inheritance
 Reading Input: E:\Development\Minecraft\Net-Music-Radio\netmusicradio\build\libs\netmusic-radio-addon-0.0.1.jar
 Adding input to inheritance map
 Processing entries
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/keyPressed(III)Z from net/minecraft/client/gui/screens/Screen/keyPressed(III)Z: keyPressed -> m_7933_
 Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/keyPressed(III)Z from net/minecraft/client/gui/screens/Screen/keyPressed(III)Z: keyPressed -> m_7933_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/isPauseScreen()Z from net/minecraft/client/gui/screens/Screen/isPauseScreen()Z: isPauseScreen -> m_7043_
 Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/isPauseScreen()Z from net/minecraft/client/gui/screens/Screen/isPauseScreen()Z: isPauseScreen -> m_7043_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V from net/minecraft/client/gui/screens/Screen/render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V: render -> m_88315_
 Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V from net/minecraft/client/gui/screens/Screen/render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V: render -> m_88315_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/mouseScrolled(DDD)Z from net/minecraft/client/gui/components/events/ContainerEventHandler/mouseScrolled(DDD)Z: mouseScrolled -> m_6050_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/init()V from net/minecraft/client/gui/screens/Screen/init()V: init -> m_7856_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/onClose()V from net/minecraft/client/gui/screens/Screen/onClose()V: onClose -> m_7379_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/mouseClicked(DDI)Z from net/minecraft/client/gui/components/events/ContainerEventHandler/mouseClicked(DDI)Z: mouseClicked -> m_6375_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/init()V from net/minecraft/client/gui/screens/Screen/init()V: init -> m_7856_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/tick()V from net/minecraft/client/gui/screens/Screen/tick()V: tick -> m_86600_
+Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/tick()V from net/minecraft/client/gui/screens/Screen/tick()V: tick -> m_86600_
 Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen$CustomRangeSlider/updateMessage()V from net/minecraft/client/gui/components/AbstractSliderButton/updateMessage()V: updateMessage -> m_5695_
 Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen$CustomRangeSlider/applyValue()V from net/minecraft/client/gui/components/AbstractSliderButton/applyValue()V: applyValue -> m_5697_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/keyPressed(III)Z from net/minecraft/client/gui/screens/Screen/keyPressed(III)Z: keyPressed -> m_7933_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/isPauseScreen()Z from net/minecraft/client/gui/screens/Screen/isPauseScreen()Z: isPauseScreen -> m_7043_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/init()V from net/minecraft/client/gui/screens/Screen/init()V: init -> m_7856_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V from net/minecraft/client/gui/screens/Screen/render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V: render -> m_88315_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/mouseClicked(DDI)Z from net/minecraft/client/gui/components/events/ContainerEventHandler/mouseClicked(DDI)Z: mouseClicked -> m_6375_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/mouseScrolled(DDD)Z from net/minecraft/client/gui/components/events/ContainerEventHandler/mouseScrolled(DDD)Z: mouseScrolled -> m_6050_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/onClose()V from net/minecraft/client/gui/screens/Screen/onClose()V: onClose -> m_7379_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/gui/CustomBigMegaphoneScreen/tick()V from net/minecraft/client/gui/screens/Screen/tick()V: tick -> m_86600_
-Conflicting propagated mapping for com/github/tartaricacid/netmusicradio/client/RadioSearchScreen/init()V from net/minecraft/client/gui/screens/Screen/init()V: init -> m_7856_
 Conflicting propagated mapping for net/minecraftforge/event/BuildCreativeModeTabContentsEvent/accept(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/CreativeModeTab$TabVisibility;)V from net/minecraft/world/item/CreativeModeTab$Output/accept(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/CreativeModeTab$TabVisibility;)V: accept -> m_246267_
 Conflicting propagated mapping for net/minecraft/world/entity/LivingEntity/lambda$addAdditionalSaveData$3(Lnet/minecraft/nbt/CompoundTag;Lnet/minecraft/nbt/Tag;)V from net/minecraft/world/entity/player/Player/lambda$addAdditionalSaveData$3(Lnet/minecraft/nbt/CompoundTag;Lnet/minecraft/nbt/Tag;)V: lambda$addAdditionalSaveData$3 -> m_219754_
 Adding extras
@@ -163,6 +164,8 @@ Writing Output: E:\Development\Minecraft\Net-Music-Radio\netmusicradio\build\reo
   assets/netmusicradio/lang/
   assets/netmusicradio/lang/en_us.json
   assets/netmusicradio/lang/zh_cn.json
+  assets/netmusicradio/netmusicradio/
+  assets/netmusicradio/netmusicradio/registry.json
   com/
   com/github/
   com/github/tartaricacid/
@@ -173,8 +176,9 @@ Writing Output: E:\Development\Minecraft\Net-Music-Radio\netmusicradio\build\reo
   com/github/tartaricacid/netmusicradio/client/
   com/github/tartaricacid/netmusicradio/client/RadioBrowserClient$Station.class
   com/github/tartaricacid/netmusicradio/client/RadioBrowserClient.class
-  com/github/tartaricacid/netmusicradio/client/RadioSearchScreen$1.class
   com/github/tartaricacid/netmusicradio/client/RadioSearchScreen.class
+  com/github/tartaricacid/netmusicradio/client/StationDatabase$1.class
+  com/github/tartaricacid/netmusicradio/client/StationDatabase.class
   com/github/tartaricacid/netmusicradio/client/api/
   com/github/tartaricacid/netmusicradio/client/api/AudioStreamHandlerRegistrar.class
   com/github/tartaricacid/netmusicradio/client/api/ShoutcastStreamHandler.class

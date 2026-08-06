@@ -3,24 +3,19 @@ package com.github.tartaricacid.netmusicradio.client;
 import com.github.tartaricacid.netmusicradio.client.RadioBrowserClient.Station;
 import com.github.tartaricacid.netmusicradio.client.gui.CustomBigMegaphoneScreen;
 import com.github.tartaricacid.netmusicradio.client.util.BigMegaphoneUtilProxy;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 public class RadioSearchScreen extends Screen {
     private static final int MARGIN = 12;
-    private static final int HEADER_HEIGHT = 56;
+    private static final int HEADER_HEIGHT = 72;
     private static final int FOOTER_HEIGHT = 36;
     private static final int MIN_ITEM_HEIGHT = 24;
     private static final int MAX_ITEM_HEIGHT = 32;
@@ -37,7 +32,7 @@ public class RadioSearchScreen extends Screen {
 
     private List<Station> results = new ArrayList<>();
 
-    private boolean showingLocal = false;
+    private boolean onlineSearch = false;
     private boolean loading = false;
     private String statusMessage = "";
 
@@ -97,15 +92,15 @@ public class RadioSearchScreen extends Screen {
                 .pos(this.leftPos, this.topPos + 30).size(btnW, 18).build());
 
         this.addRenderableWidget(Button.builder(
-                Component.translatable("gui.netmusicradio.search.local"),
-                b -> showLocal())
-                .pos(this.leftPos + btnW + 2, this.topPos + 30).size(btnW, 18).build());
-
-        this.addRenderableWidget(Button.builder(
                 Component.translatable("gui.netmusic.big_megaphone.back"),
                 b -> this.onClose())
                 .pos(this.leftPos + (btnW + 2) * 2, this.topPos + 30).size(btnW, 18).build());
 
+        rebuildListButtons();
+    }
+
+    private void toggleOnlineSearch() {
+        this.onlineSearch = !this.onlineSearch;
         rebuildListButtons();
     }
 
@@ -119,65 +114,62 @@ public class RadioSearchScreen extends Screen {
             rebuildListButtons();
             return;
         }
-        this.showingLocal = false;
         this.page = 0;
         this.loading = true;
         this.statusMessage = Component.translatable("gui.netmusicradio.search.searching").getString();
         rebuildListButtons();
         this.results.clear();
 
-        new Thread(() -> {
-            List<Station> found = RadioBrowserClient.search(q, country, 50);
+        if (this.onlineSearch) {
+            new Thread(() -> {
+                List<Station> found = RadioBrowserClient.search(q, country, 50);
+                List<Station> filtered = new ArrayList<>();
+                for (Station s : found) {
+                    if (s == null || s.url == null || s.url.isBlank()) continue;
+                    if (!BigMegaphoneUtilProxy.isValidStreamUrl(s.url)) continue;
+                    filtered.add(s);
+                }
+                if (this.minecraft != null) {
+                    this.minecraft.execute(() -> {
+                        this.loading = false;
+                        this.results = filtered;
+                        if (this.results.isEmpty()) {
+                            this.statusMessage = Component.translatable("gui.netmusicradio.search.no_results").getString();
+                        } else {
+                            this.statusMessage = Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
+                        }
+                        rebuildListButtons();
+                    });
+                }
+            }, "NetMusic-RadioSearch").start();
+        } else {
+            if (!StationDatabase.isLoaded()) {
+                StationDatabase.ensureLoadedAsync();
+                this.statusMessage = Component.translatable("gui.netmusicradio.search.loading_local").getString();
+                this.loading = false;
+                this.results.clear();
+                this.page = 0;
+                rebuildListButtons();
+                return;
+            }
+            List<Station> found = StationDatabase.search(q, country, 50);
             List<Station> filtered = new ArrayList<>();
             for (Station s : found) {
                 if (s == null || s.url == null || s.url.isBlank()) continue;
                 if (!BigMegaphoneUtilProxy.isValidStreamUrl(s.url)) continue;
                 filtered.add(s);
             }
-            if (this.minecraft != null) {
-                this.minecraft.execute(() -> {
-                    this.loading = false;
-                    this.results = filtered;
-                    if (this.results.isEmpty()) {
-                        this.statusMessage = Component.translatable("gui.netmusicradio.search.no_results").getString();
-                    } else {
-                        this.statusMessage = Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
-                    }
-                    rebuildListButtons();
-                });
+            this.loading = false;
+            this.results = filtered;
+            if (StationDatabase.getLoadError() != null) {
+                this.statusMessage = StationDatabase.getLoadError();
+            } else if (this.results.isEmpty()) {
+                this.statusMessage = Component.translatable("gui.netmusicradio.search.no_results").getString();
+            } else {
+                this.statusMessage = Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
             }
-        }, "NetMusic-RadioSearch").start();
-    }
-
-    private void showLocal() {
-        this.showingLocal = true;
-        this.loading = false;
-        this.page = 0;
-        this.statusMessage = Component.translatable("gui.netmusicradio.search.local_presets").getString();
-        List<Station> local = new ArrayList<>();
-        try {
-            var manager = Minecraft.getInstance().getResourceManager();
-            var opt = manager.getResource(new ResourceLocation("netmusic", "broadcasting_presets.json"));
-            if (opt.isPresent()) {
-                try (InputStreamReader reader = new InputStreamReader(opt.get().open(), StandardCharsets.UTF_8)) {
-                    List<java.util.Map<String, String>> loaded = new Gson().fromJson(reader, new TypeToken<List<java.util.Map<String, String>>>(){}.getType());
-                    if (loaded != null) {
-                        for (var map : loaded) {
-                            if (map == null) continue;
-                            String name = map.getOrDefault("name", "");
-                            String url = map.getOrDefault("url", "");
-                            if (url == null || url.isBlank()) continue;
-                            if (!BigMegaphoneUtilProxy.isValidStreamUrl(url)) continue;
-                            local.add(new Station(name, url, "", ""));
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-            this.statusMessage = Component.translatable("gui.netmusicradio.search.load_failed").getString();
+            rebuildListButtons();
         }
-        this.results = local;
-        rebuildListButtons();
     }
 
     private void rebuildListButtons() {
@@ -191,20 +183,25 @@ public class RadioSearchScreen extends Screen {
         this.addRenderableWidget(this.countryField);
 
         int btnW = (w - 4) / 3;
-        this.addRenderableWidget(Button.builder(
+        Button searchBtn = Button.builder(
                 Component.translatable("gui.netmusicradio.search.button"),
                 b -> doSearch())
-                .pos(this.leftPos, this.topPos + 30).size(btnW, 18).build());
-
-        this.addRenderableWidget(Button.builder(
-                Component.translatable("gui.netmusicradio.search.local"),
-                b -> showLocal())
-                .pos(this.leftPos + btnW + 2, this.topPos + 30).size(btnW, 18).build());
+                .pos(this.leftPos, this.topPos + 30).size(btnW, 18).build();
+        this.addRenderableWidget(searchBtn);
 
         this.addRenderableWidget(Button.builder(
                 Component.translatable("gui.netmusic.big_megaphone.back"),
                 b -> this.onClose())
                 .pos(this.leftPos + (btnW + 2) * 2, this.topPos + 30).size(btnW, 18).build());
+
+        int checkboxY = this.topPos + HEADER_HEIGHT - 14;
+        int checkboxX = this.leftPos + 2;
+
+        Button onlineBtn = Button.builder(
+                Component.translatable(this.onlineSearch ? "gui.netmusicradio.search.online_enabled" : "gui.netmusicradio.search.online_disabled"),
+                b -> toggleOnlineSearch())
+                .pos(checkboxX, checkboxY).size(Math.min(160, w - 4), 16).build();
+        this.addRenderableWidget(onlineBtn);
 
         int listTop = this.topPos + HEADER_HEIGHT;
         int itemH = getItemHeight();
@@ -388,6 +385,17 @@ public class RadioSearchScreen extends Screen {
         }
 
         super.render(graphics, mouseX, mouseY, partialTicks);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!this.onlineSearch
+                && this.statusMessage.equals(Component.translatable("gui.netmusicradio.search.loading_local").getString())
+                && StationDatabase.isLoaded()) {
+            this.statusMessage = "";
+            rebuildListButtons();
+        }
     }
 
     @Override

@@ -3,14 +3,15 @@
   "gui.netmusicradio.search.name": "电台名称",
   "gui.netmusicradio.search.country": "国家地区",
   "gui.netmusicradio.search.button": "搜索",
-  "gui.netmusicradio.search.local": "本地预设",
+  "gui.netmusicradio.search.online_disabled": "仅本地数据",
+  "gui.netmusicradio.search.online_enabled": "启用网络搜索",
   "gui.netmusicradio.search.add": "添加",
   "gui.netmusicradio.search.enter_hint": "请输入电台名称或国家",
   "gui.netmusicradio.search.searching": "搜索中...",
   "gui.netmusicradio.search.no_results": "未找到电台",
   "gui.netmusicradio.search.found": "找到 %s 个电台",
-  "gui.netmusicradio.search.local_presets": "显示本地预设",
   "gui.netmusicradio.search.load_failed": "加载预设失败",
   "gui.netmusicradio.search.empty_url": "电台链接为空",
-  "gui.netmusicradio.search.unknown_region": "未知地区"
+  "gui.netmusicradio.search.unknown_region": "未知地区",
+  "gui.netmusicradio.search.loading_local": "本地数据加载中，请稍后重试..."
 }
