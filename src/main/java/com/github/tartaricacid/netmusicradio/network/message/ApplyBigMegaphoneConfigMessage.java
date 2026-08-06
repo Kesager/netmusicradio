@@ -1,8 +1,10 @@
 package com.github.tartaricacid.netmusicradio.network.message;
 
 import com.github.tartaricacid.netmusic.tileentity.TileEntityBigMegaphone;
+import com.github.tartaricacid.netmusicradio.NetMusicRadioAddon;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkDirection;
@@ -10,9 +12,18 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Set;
 import java.util.function.Supplier;
 
+/**
+ * 自定义的大喇叭配置消息
+ * <p>
+ * 绕过 NetMusic 原始的 URL 验证限制，支持：
+ * - 标准音频链接（.mp3, .ogg 等）
+ * - Shoutcast/Icecast 流媒体
+ * - 任何 HTTP(S) 音频直链
+ * <p>
+ * 修复：服务端处理后主动同步 TileEntity 数据到客户端，确保 NBT 读取正确
+ */
 public class ApplyBigMegaphoneConfigMessage {
     private final BlockPos pos;
     private final String url;
@@ -57,36 +68,83 @@ public class ApplyBigMegaphoneConfigMessage {
 
     private static void handleMessage(ApplyBigMegaphoneConfigMessage message, NetworkEvent.Context context) {
         ServerPlayer sender = context.getSender();
-        if (sender == null || sender.distanceToSqr(Vec3.atCenterOf(message.pos)) > 64) {
+        if (sender == null) {
+            NetMusicRadioAddon.LOGGER.warn("Rejected BigMegaphone config: no sender");
             return;
         }
+
+        double distanceSqr = sender.distanceToSqr(Vec3.atCenterOf(message.pos));
+        if (distanceSqr > 64) {
+            NetMusicRadioAddon.LOGGER.warn("Rejected BigMegaphone config: sender too far ({} blocks) from {}",
+                    Math.sqrt(distanceSqr), message.pos);
+            return;
+        }
+
         if (!(sender.level().getBlockEntity(message.pos) instanceof TileEntityBigMegaphone megaphone)) {
+            NetMusicRadioAddon.LOGGER.warn("Rejected BigMegaphone config: no megaphone at {}", message.pos);
             return;
         }
 
-        boolean wasBroadcasting = megaphone.isBroadcasting();
+        NetMusicRadioAddon.LOGGER.info("Processing BigMegaphone action {} at {} (URL: {})",
+                message.action, message.pos, message.url);
+
+        switch (message.action) {
+            case STOP -> handleStop(megaphone, message);
+            case START -> handleStart(megaphone, message);
+            case SAVE -> handleSave(megaphone, message);
+        }
+
+        syncTileEntityToClient(sender, megaphone);
+    }
+
+    private static void handleStop(TileEntityBigMegaphone megaphone, ApplyBigMegaphoneConfigMessage message) {
+        NetMusicRadioAddon.LOGGER.info("Stopping broadcast at {}", message.pos);
+        megaphone.stopBroadcast();
+    }
+
+    private static void handleStart(TileEntityBigMegaphone megaphone, ApplyBigMegaphoneConfigMessage message) {
         boolean changed = megaphone.applyConfig(message.url, message.name, message.range);
+        NetMusicRadioAddon.LOGGER.debug("Config applied, changed: {}", changed);
 
-        if (message.action == Action.STOP) {
-            megaphone.stopBroadcast();
-            return;
-        }
+        startBroadcastWithoutValidation(megaphone);
+    }
 
-        if (message.action == Action.START || (changed && wasBroadcasting)) {
-            startBroadcastWithoutValidation(megaphone);
+    private static void handleSave(TileEntityBigMegaphone megaphone, ApplyBigMegaphoneConfigMessage message) {
+        boolean changed = megaphone.applyConfig(message.url, message.name, message.range);
+        NetMusicRadioAddon.LOGGER.info("Config saved at {} (changed: {}, URL: {})",
+                message.pos, changed, message.url);
+    }
+
+    /**
+     * 主动发送 TileEntity 数据给客户端，确保 NBT 同步
+     */
+    private static void syncTileEntityToClient(ServerPlayer sender, TileEntityBigMegaphone megaphone) {
+        try {
+            ClientboundBlockEntityDataPacket updatePacket = ClientboundBlockEntityDataPacket.create(megaphone);
+            sender.connection.send(updatePacket);
+            NetMusicRadioAddon.LOGGER.debug("Synced TileEntity data to client at {}", megaphone.getBlockPos());
+        } catch (Throwable t) {
+            NetMusicRadioAddon.LOGGER.error("Failed to sync TileEntity to client", t);
         }
     }
 
+    /**
+     * 在不进行 URL 验证的情况下启动广播
+     */
     private static void startBroadcastWithoutValidation(TileEntityBigMegaphone megaphone) {
         try {
-            // Replicate the broadcast restart process without NetMusic's URL suffix check.
             invokePrivateMethod(megaphone, "stopAllListeners");
-            int sessionId = getPrivateField(megaphone, "sessionId", Integer.class);
-            setPrivateField(megaphone, "sessionId", sessionId + 1);
+
+            long sessionId = getPrivateField(megaphone, "sessionId", Long.class);
+            setPrivateField(megaphone, "sessionId", sessionId + 1L);
             setPrivateField(megaphone, "broadcasting", true);
             megaphone.markDirty();
+
             invokePrivateMethod(megaphone, "refreshAudience");
-        } catch (Throwable ignored) {
+
+            NetMusicRadioAddon.LOGGER.debug("Successfully started broadcast without URL validation");
+        } catch (Throwable t) {
+            NetMusicRadioAddon.LOGGER.error("Failed to start broadcast without validation", t);
         }
     }
 

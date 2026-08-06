@@ -28,11 +28,17 @@ public final class RadioBrowserClient {
         public final String name;
         public final String url;
         public final String country;
+        public final String logoUrl;
 
         public Station(String name, String url, String country) {
+            this(name, url, country, "");
+        }
+
+        public Station(String name, String url, String country, String logoUrl) {
             this.name = name == null ? "" : name;
             this.url = url == null ? "" : url;
             this.country = country == null ? "" : country;
+            this.logoUrl = logoUrl == null ? "" : logoUrl;
         }
     }
 
@@ -59,11 +65,12 @@ public final class RadioBrowserClient {
                     String sname = o.has("name") ? o.get("name").getAsString() : "";
                     String surl = o.has("url_resolved") ? o.get("url_resolved").getAsString() : (o.has("url") ? o.get("url").getAsString() : "");
                     String scountry = o.has("country") ? o.get("country").getAsString() : "";
+                    String slogo = o.has("logo_url") ? o.get("logo_url").getAsString() : "";
                     if (surl == null || surl.isBlank()) continue;
                     String key = surl.trim().toLowerCase();
                     if (seen.contains(key)) continue;
                     seen.add(key);
-                    list.add(new Station(sname, surl, scountry));
+                    list.add(new Station(sname, surl, scountry, slogo));
                 }
                 return list;
             }

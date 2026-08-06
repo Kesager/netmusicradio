@@ -2,17 +2,10 @@ package com.github.tartaricacid.netmusicradio;
 
 import com.github.tartaricacid.netmusic.client.gui.BigMegaphonePresetPickerScreen;
 import com.github.tartaricacid.netmusic.client.gui.BigMegaphoneScreen;
-import com.github.tartaricacid.netmusicradio.client.RadioSearchScreen;
-import com.github.tartaricacid.netmusicradio.network.message.ApplyBigMegaphoneConfigMessage;
-import com.github.tartaricacid.netmusicradio.network.message.ApplyBigMegaphoneConfigMessage.Action;
+import com.github.tartaricacid.netmusicradio.client.gui.CustomBigMegaphoneScreen;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
-
-import java.lang.reflect.Field;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -20,183 +13,134 @@ import net.minecraftforge.fml.common.Mod;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 客户端事件处理器
+ * <p>
+ * 功能：
+ * 1. 将 BigMegaphoneScreen 替换为自定义的 CustomBigMegaphoneScreen
+ * 2. 将 BigMegaphonePresetPickerScreen 替换为自定义的搜索界面
+ * 3. 支持任意 HTTP(S) 音频流（包括 Shoutcast/Icecast 流）
+ * <p>
+ * 修复：
+ * - 使用 BlockPos 映射确保搜索屏幕正确传回链接
+ * - 改进屏幕替换逻辑
+ */
 @Mod.EventBusSubscriber(modid = NetMusicRadioAddon.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class ClientEventHandler {
-    private static final Logger LOGGER = LogManager.getLogger(NetMusicRadioAddon.MODID);
+    public static final Logger LOGGER = LogManager.getLogger(NetMusicRadioAddon.MODID);
+
+    private static final Map<BlockPos, CustomBigMegaphoneScreen> SCREEN_MAP = new HashMap<>();
 
     @SubscribeEvent
     public static void onScreenInit(ScreenEvent.Init.Post event) {
         try {
             Screen screen = event.getScreen();
             if (screen == null) {
-                LOGGER.warn("Screen init event fired without a screen object: {}", event.getClass().getName());
                 return;
             }
-            LOGGER.info("Screen init event fired: {} screen={}", event.getClass().getName(), screen.getClass().getName());
-            if (screen instanceof BigMegaphonePresetPickerScreen) {
+
+            if (screen instanceof CustomBigMegaphoneScreen) {
+                return;
+            }
+
+            if (screen instanceof BigMegaphoneScreen) {
+                replaceWithCustomScreen((BigMegaphoneScreen) screen);
+            } else if (screen instanceof BigMegaphonePresetPickerScreen) {
                 replacePresetPickerScreen((BigMegaphonePresetPickerScreen) screen);
-            } else if (screen instanceof BigMegaphoneScreen) {
-                handleBigMegaphoneScreen((BigMegaphoneScreen) screen);
             }
         } catch (Throwable t) {
             LOGGER.error("Error in onScreenInit", t);
         }
     }
 
+    private static void replaceWithCustomScreen(BigMegaphoneScreen original) {
+        try {
+            BlockPos blockPos = getBlockPos(original);
+            if (blockPos == null) {
+                LOGGER.warn("Failed to get blockPos from BigMegaphoneScreen");
+                return;
+            }
+
+            CustomBigMegaphoneScreen customScreen = new CustomBigMegaphoneScreen(blockPos);
+            SCREEN_MAP.put(blockPos, customScreen);
+            Minecraft.getInstance().setScreen(customScreen);
+            LOGGER.info("Replaced BigMegaphoneScreen with CustomBigMegaphoneScreen at {}", blockPos);
+        } catch (Throwable t) {
+            LOGGER.error("Failed to replace BigMegaphoneScreen", t);
+        }
+    }
+
+    private static BlockPos getBlockPos(BigMegaphoneScreen screen) {
+        try {
+            var field = BigMegaphoneScreen.class.getDeclaredField("blockPos");
+            field.setAccessible(true);
+            return (BlockPos) field.get(screen);
+        } catch (ReflectiveOperationException e) {
+            LOGGER.error("Failed to get blockPos from BigMegaphoneScreen", e);
+            return null;
+        }
+    }
+
     private static void replacePresetPickerScreen(BigMegaphonePresetPickerScreen pickerScreen) {
         try {
-            var parentField = pickerScreen.getClass().getDeclaredField("parent");
-            parentField.setAccessible(true);
-            Object parent = parentField.get(pickerScreen);
+            Screen parent = getParentScreen(pickerScreen);
+            BlockPos blockPos = findBlockPosFromParent(parent);
+
+            CustomBigMegaphoneScreen customScreen = null;
+            if (blockPos != null) {
+                customScreen = SCREEN_MAP.get(blockPos);
+            }
+
+            if (customScreen == null && parent instanceof BigMegaphoneScreen) {
+                BlockPos parentPos = getBlockPos((BigMegaphoneScreen) parent);
+                if (parentPos != null) {
+                    customScreen = SCREEN_MAP.get(parentPos);
+                }
+            }
+
+            if (customScreen == null && blockPos != null) {
+                customScreen = new CustomBigMegaphoneScreen(blockPos);
+                SCREEN_MAP.put(blockPos, customScreen);
+            }
+
+            Screen searchParent = customScreen != null ? customScreen : parent;
+
+            Minecraft.getInstance().setScreen(
+                    new com.github.tartaricacid.netmusicradio.client.RadioSearchScreen(searchParent));
+            LOGGER.info("Replaced BigMegaphonePresetPickerScreen with RadioSearchScreen");
+        } catch (Throwable t) {
+            LOGGER.error("Failed to replace preset picker", t);
+        }
+    }
+
+    private static Screen getParentScreen(BigMegaphonePresetPickerScreen pickerScreen) {
+        try {
+            var field = pickerScreen.getClass().getDeclaredField("parent");
+            field.setAccessible(true);
+            Object parent = field.get(pickerScreen);
             if (parent instanceof Screen screen) {
-                Minecraft.getInstance().setScreen(new RadioSearchScreen(screen));
-                LOGGER.info("Replaced BigMegaphonePresetPickerScreen with RadioSearchScreen");
-            } else {
-                LOGGER.warn("Preset picker parent is not a Screen: {}", parent == null ? "null" : parent.getClass().getName());
+                return screen;
             }
-        } catch (Throwable t) {
-            LOGGER.error("Failed to replace preset picker with radio search", t);
-        }
-    }
-
-    private static void handleBigMegaphoneScreen(BigMegaphoneScreen screen) {
-        try {
-            int leftPos = getPrivateField(screen, "leftPos", int.class);
-            int topPos = getPrivateField(screen, "topPos", int.class);
-            int presetY = topPos + 139;
-            Button presetButton = findButtonAt(screen, leftPos, presetY);
-            if (presetButton != null) {
-                LOGGER.info("Found BigMegaphone preset button at {}x{}", leftPos, presetY);
-                replaceButtonAction(screen, presetButton, b -> openRadioSearch(screen));
-                LOGGER.info("Replaced BigMegaphone preset button action with radio search");
-            } else {
-                LOGGER.warn("Could not find BigMegaphone preset button to override, adding radio search button instead");
-                addSearchButton(screen, leftPos, presetY);
-            }
-
-            int saveY = topPos + 114;
-            Button saveButton = findButtonAt(screen, leftPos, saveY);
-            if (saveButton != null) {
-                replaceButtonAction(screen, saveButton, b -> sendCustomBigMegaphoneAction(screen, Action.SAVE));
-                LOGGER.info("Patched BigMegaphone save button to bypass suffix restriction");
-            }
-
-            Button startButton = findButtonAt(screen, leftPos + 82, saveY);
-            if (startButton != null) {
-                replaceButtonAction(screen, startButton, b -> sendCustomBigMegaphoneAction(screen, Action.START));
-                LOGGER.info("Patched BigMegaphone start button to bypass suffix restriction");
-            }
-        } catch (Throwable t) {
-            LOGGER.error("Failed to patch BigMegaphoneScreen controls", t);
-        }
-    }
-
-    private static void sendCustomBigMegaphoneAction(Screen screen, Action action) {
-        try {
-            BlockPos blockPos = getPrivateField(screen, "blockPos", BlockPos.class);
-            Object urlField = getPrivateField(screen, "urlTextField", Object.class);
-            Object nameField = getPrivateField(screen, "nameTextField", Object.class);
-            Object rangeSlider = getPrivateField(screen, "rangeSlider", Object.class);
-
-            String url = "";
-            String name = "";
-            int range = 32;
-
-            if (urlField instanceof net.minecraft.client.gui.components.EditBox editBox) {
-                url = editBox.getValue().trim();
-            }
-            if (nameField instanceof net.minecraft.client.gui.components.EditBox editBox) {
-                name = editBox.getValue().trim();
-            }
-            if (rangeSlider != null) {
-                try {
-                    var method = rangeSlider.getClass().getMethod("getCurrentRange");
-                    range = (Integer) method.invoke(rangeSlider);
-                } catch (Exception ignored) {
-                }
-            }
-
-            if (action != Action.STOP) {
-                if (url.isBlank() || name.isBlank()) {
-                    return;
-                }
-            }
-
-            ApplyBigMegaphoneConfigMessage message = new ApplyBigMegaphoneConfigMessage(blockPos, url, name, range, action);
-            com.github.tartaricacid.netmusicradio.network.NetMusicRadioNetwork.INSTANCE.sendToServer(message);
-        } catch (Throwable t) {
-            LOGGER.error("Failed to send custom BigMegaphone action", t);
-        }
-    }
-
-    private static void openRadioSearch(Screen parent) {
-        Minecraft.getInstance().setScreen(new RadioSearchScreen(parent));
-    }
-
-    private static Button findButtonAt(Screen screen, int x, int y) {
-        try {
-            var childrenMethod = Screen.class.getMethod("children");
-            var children = (java.util.List<?>) childrenMethod.invoke(screen);
-            for (Object child : children) {
-                if (child instanceof Button button) {
-                    if (isButtonAt(button, x, y)) {
-                        return button;
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.error("Error while searching for BigMegaphone preset button", t);
+        } catch (ReflectiveOperationException e) {
+            LOGGER.debug("Failed to get parent from BigMegaphonePresetPickerScreen", e);
         }
         return null;
     }
 
-    private static boolean isButtonAt(Button button, int x, int y) {
-        return Math.abs(button.getX() - x) <= 1 && Math.abs(button.getY() - y) <= 1;
-    }
-
-    private static void replaceButtonAction(Screen screen, Button button, Button.OnPress onPress) {
-        try {
-            Field onPressField = findFieldInHierarchy(button.getClass(), "onPress");
-            if (onPressField == null) {
-                throw new NoSuchFieldException("onPress");
-            }
-            onPressField.setAccessible(true);
-            onPressField.set(button, onPress);
-        } catch (Throwable t) {
-            LOGGER.error("Failed to set button onPress, adding supplementary radio search button instead", t);
-            addSearchButton(screen, button.getX(), button.getY() + 24);
+    private static BlockPos findBlockPosFromParent(Screen parent) {
+        if (parent instanceof CustomBigMegaphoneScreen screen) {
+            return screen.getBlockPos();
         }
-    }
-
-    private static Field findFieldInHierarchy(Class<?> type, String fieldName) {
-        Class<?> current = type;
-        while (current != null) {
-            try {
-                return current.getDeclaredField(fieldName);
-            } catch (NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            }
+        if (parent instanceof BigMegaphoneScreen screen) {
+            return getBlockPos(screen);
         }
         return null;
     }
 
-    private static void addSearchButton(Screen screen, int x, int y) {
-        try {
-            Button searchButton = Button.builder(Component.literal("Radio Search"), btn -> openRadioSearch(screen))
-                    .bounds(x, y, 240, 20)
-                    .build();
-            var addWidget = Screen.class.getDeclaredMethod("addRenderableWidget", GuiEventListener.class);
-            addWidget.setAccessible(true);
-            addWidget.invoke(screen, searchButton);
-        } catch (Throwable t) {
-            LOGGER.error("Failed to add radio search button to BigMegaphoneScreen", t);
-        }
-    }
-
-    private static <T> T getPrivateField(Object instance, String fieldName, Class<T> type) throws ReflectiveOperationException {
-        var field = instance.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        return type.cast(field.get(instance));
+    public static CustomBigMegaphoneScreen getScreenForBlockPos(BlockPos pos) {
+        return SCREEN_MAP.get(pos);
     }
 }
-
