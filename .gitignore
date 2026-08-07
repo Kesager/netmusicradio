@@ -26,3 +26,11 @@ logs
 forge*changelog.txt
 
 .ref
+.gradle/file-system.probe
+.gradle/8.14.3/checksums/checksums.lock
+.gradle/8.14.3/executionHistory/executionHistory.bin
+.gradle/8.14.3/executionHistory/executionHistory.lock
+.gradle/8.14.3/fileHashes/fileHashes.bin
+.gradle/8.14.3/fileHashes/fileHashes.lock
+.gradle/8.14.3/fileHashes/resourceHashesCache.bin
+.gradle/buildOutputCleanup/buildOutputCleanup.lock
