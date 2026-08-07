@@ -14,7 +14,7 @@ apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'java'
 
 version = '0.0.1'
-group = 'com.github.tartaricacid'
+group = 'org.eu.sager'
 archivesBaseName = 'netmusic-radio-addon'
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
