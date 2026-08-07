@@ -4,9 +4,6 @@
   "gui.netmusicradio.search.country": "Country/Region",
   "gui.netmusicradio.search.country.clear": "Clear",
   "gui.netmusicradio.search.country.hint": "Search country or region",
-  "gui.netmusicradio.search.button": "Search",
-  "gui.netmusicradio.search.online_disabled": "Local Only",
-  "gui.netmusicradio.search.online_enabled": "Online Search",
   "gui.netmusicradio.search.online_search": "Online Search",
   "gui.netmusicradio.search.add": "Add",
   "gui.netmusicradio.search.enter_hint": "Enter station name or select country/region",
@@ -18,6 +15,5 @@
   "gui.netmusicradio.search.unknown_region": "Unknown",
   "gui.netmusicradio.search.loading_local": "Loading local data, please try again...",
   "gui.netmusicradio.favorites.title": "Favorites",
-  "gui.netmusicradio.favorites.empty": "No favorites yet",
-  "gui.netmusicradio.favorites.back_to_search": "Back to Search"
+  "gui.netmusicradio.favorites.empty": "No favorites yet"
 }
