@@ -13,66 +13,91 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class RadioSearchScreen extends Screen {
     private static final int MARGIN = 12;
-    private static final int HEADER_HEIGHT = 54;
-    private static final int FOOTER_HEIGHT = 36;
+    private static final int MAX_CONTENT_WIDTH = 400;
+    private static final int TITLE_BAR_HEIGHT = 56;
+    private static final int FOOTER_BAR_HEIGHT = 58;
+    private static final int TITLE_Y = 6;
+    private static final int SUBTITLE_Y = 19;
+    private static final int HEADER_INPUT_Y = 32;
+    private static final int FOOTER_HEIGHT = 58;
     private static final int MIN_ITEM_HEIGHT = 24;
     private static final int MAX_ITEM_HEIGHT = 32;
     private static final int MIN_LOGO_SIZE = 16;
     private static final int MAX_LOGO_SIZE = 24;
-    private static final int DROPDOWN_ITEM_HEIGHT = 18;
-    private static final int DROPDOWN_VISIBLE_ITEMS = 6;
-    private static final int DROPDOWN_SEARCH_HEIGHT = 24;
+    private static final int BTN_HEIGHT = 20;
+    private static final int SEARCH_BTN_WIDTH = 24;
+    private static final int ADD_BTN_WIDTH = 42;
+    private static final int ADD_BTN_HEIGHT = 16;
+    private static final int ADD_BTN_RIGHT_PAD = 44;
+    private static final int LOGO_TEXTURE_SIZE = 64;
+    private static final int FONT_HEIGHT = 9;
+    private static final int CHAR_WIDTH_ESTIMATE = 6;
+    private static final int LOGO_TEXT_PAD = 20;
+    private static final int NAV_GAP = 4;
+    private static final int SEARCH_RESULT_LIMIT = 50;
 
     private final Screen parentScreen;
     private int leftPos;
     private int topPos;
     private int page = 0;
-    private boolean countriesLoaded = false;
 
     private EditBox searchField;
+    private EditBox pageField;
     private Checkbox onlineCheckbox;
     private Button countryBtn;
     private Button searchBtn;
-    private Button clearBtn;
-    private EditBox countrySearchField;
+
+    private final CountryDropdown dropdown = new CountryDropdown();
 
     private List<Station> results = new ArrayList<>();
-    private List<String> filteredCountries = new ArrayList<>();
 
     private boolean onlineSearch = false;
+    private boolean autoSearchPending = false;
     private boolean loading = false;
     private String statusMessage = "";
     private String selectedCountry = "";
-    private boolean countryDropdownOpen = false;
-    private int countryScrollOffset = 0;
 
     public RadioSearchScreen(Screen parent) {
         super(Component.translatable("gui.netmusicradio.preset_picker.title"));
         this.parentScreen = parent;
     }
 
+    // ===== 布局计算 =====
+
     private int getPanelWidth() {
-        return Math.min(320, this.width - MARGIN * 2);
+        return Math.min(this.width - MARGIN * 2, MAX_CONTENT_WIDTH);
     }
 
     private int getPanelHeight() {
-        return Math.min(420, this.height - MARGIN * 2);
+        return this.height;
+    }
+
+    private int getContentLeft() {
+        return (this.width - getPanelWidth()) / 2;
+    }
+
+    private int getListTop() {
+        return TITLE_BAR_HEIGHT;
+    }
+
+    private int getListBottom() {
+        return this.height - FOOTER_HEIGHT;
     }
 
     private int getItemHeight() {
-        int available = getPanelHeight() - HEADER_HEIGHT - FOOTER_HEIGHT;
+        int available = getListBottom() - getListTop();
         int maxItems = Math.max(3, available / MIN_ITEM_HEIGHT);
         int itemH = available / maxItems;
         return Math.max(MIN_ITEM_HEIGHT, Math.min(MAX_ITEM_HEIGHT, itemH));
     }
 
     private int getPageSize() {
-        int available = getPanelHeight() - HEADER_HEIGHT - FOOTER_HEIGHT;
+        int available = getListBottom() - getListTop();
         return Math.max(3, available / getItemHeight());
     }
 
@@ -81,33 +106,30 @@ public class RadioSearchScreen extends Screen {
         return Math.max(MIN_LOGO_SIZE, Math.min(MAX_LOGO_SIZE, s));
     }
 
-    private int getDropdownHeight() {
-        return DROPDOWN_SEARCH_HEIGHT + DROPDOWN_VISIBLE_ITEMS * DROPDOWN_ITEM_HEIGHT + 2;
+    private int getMaxPage() {
+        int size = this.results.size();
+        int pageSize = getPageSize();
+        return size == 0 ? 0 : (size - 1) / pageSize;
     }
 
-    private void handleDropdownClear() {
-        this.selectedCountry = "";
-        if (this.clearBtn != null) {
-            this.clearBtn.visible = false;
-        }
-        if (this.countrySearchField != null) {
-            this.countrySearchField.setValue("");
-            updateFilteredCountries();
-        }
-    }
+    // ===== 初始化 =====
 
     @Override
     protected void init() {
-        this.leftPos = (this.width - getPanelWidth()) / 2;
-        this.topPos = (this.height - getPanelHeight()) / 2;
+        this.leftPos = getContentLeft();
+        this.topPos = 0;
 
         int w = getPanelWidth();
-        int searchW = (int) (w * 0.55);
+        int countryW = (int) (w * 0.4);
+        int searchW = w - countryW - SEARCH_BTN_WIDTH - NAV_GAP * 2;
 
-        this.searchField = new EditBox(this.font, this.leftPos, this.topPos + 8, searchW, 18,
+        this.searchField = new EditBox(this.font, this.leftPos, this.topPos + HEADER_INPUT_Y, searchW, BTN_HEIGHT,
                 Component.translatable("gui.netmusicradio.search.name"));
         this.searchField.setMaxLength(128);
         this.addRenderableWidget(this.searchField);
+
+        this.autoSearchPending = true;
+        StationDatabase.ensureLoadedAsync();
 
         rebuildListButtons();
     }
@@ -118,85 +140,134 @@ public class RadioSearchScreen extends Screen {
         }
     }
 
-    private void openCountryDropdown() {
-        this.countryDropdownOpen = true;
-        this.countryScrollOffset = 0;
-        this.countriesLoaded = StationDatabase.isLoaded();
-        if (!StationDatabase.isLoaded()) {
-            StationDatabase.ensureLoadedAsync();
-        }
-        this.filteredCountries = new ArrayList<>(StationDatabase.getCountries());
-        int searchW = (int) (getPanelWidth() * 0.55);
-        int countryW = getPanelWidth() - searchW - 4;
-        int dropdownX = this.leftPos + searchW + 4;
-        int dropdownY = this.topPos + 8 + 18 + 2;
-        this.countrySearchField = new EditBox(this.font, dropdownX + 2, dropdownY + 2, countryW - 26, DROPDOWN_SEARCH_HEIGHT - 4,
-                Component.translatable("gui.netmusicradio.search.country.hint"));
-        this.countrySearchField.setMaxLength(64);
-        String clearText = Component.translatable("gui.netmusicradio.search.country.clear").getString();
-        int clearBtnW = this.font.width(clearText) + 8;
-        this.clearBtn = Button.builder(
-                Component.literal(clearText),
-                b -> handleDropdownClear())
-                .pos(dropdownX + countryW - clearBtnW - 2, dropdownY + 2)
-                .size(clearBtnW, DROPDOWN_SEARCH_HEIGHT - 4)
-                .build();
-        this.clearBtn.visible = false;
-        rebuildListButtons();
-        this.setFocused(this.countrySearchField);
+    // ===== 控件重建 =====
+
+    private void rebuildListButtons() {
+        this.clearWidgets();
+        rebuildHeader();
+        rebuildListItems();
+        rebuildNav();
     }
 
-    private void closeCountryDropdown() {
-        this.countryDropdownOpen = false;
-        this.countriesLoaded = false;
-        if (this.countrySearchField != null) {
-            this.countrySearchField = null;
-        }
-        if (this.clearBtn != null) {
-            this.clearBtn = null;
-        }
-        this.countryScrollOffset = 0;
-        this.filteredCountries.clear();
-        this.setFocused(this.searchField);
-        if (this.onlineCheckbox != null) {
-            this.onlineCheckbox.visible = true;
-        }
-        if (this.searchBtn != null) {
-            this.searchBtn.visible = true;
+    private void rebuildHeader() {
+        int w = getPanelWidth();
+        int countryW = (int) (w * 0.4);
+        int searchW = w - countryW - SEARCH_BTN_WIDTH - NAV_GAP * 2;
+
+        this.addRenderableWidget(this.searchField);
+
+        String countryLabel = dropdown.getButtonLabel();
+        this.countryBtn = Button.builder(
+                Component.literal(countryLabel + " \u25BE"),
+                b -> dropdown.toggle())
+                .pos(this.leftPos + searchW + NAV_GAP, this.topPos + HEADER_INPUT_Y)
+                .size(countryW, BTN_HEIGHT).build();
+        this.addRenderableWidget(this.countryBtn);
+
+        this.searchBtn = Button.builder(
+                Component.literal("\uD83D\uDD0D"),
+                b -> doSearch())
+                .pos(this.leftPos + searchW + countryW + NAV_GAP * 2, this.topPos + HEADER_INPUT_Y)
+                .size(SEARCH_BTN_WIDTH, BTN_HEIGHT).build();
+        this.searchBtn.visible = !dropdown.isOpen();
+        this.addRenderableWidget(this.searchBtn);
+
+        dropdown.rebuildWidgets();
+    }
+
+    private void rebuildListItems() {
+        int w = getPanelWidth();
+        int listTop = getListTop();
+        int itemH = getItemHeight();
+        int pageSize = getPageSize();
+
+        int start = this.page * pageSize;
+        int end = Math.min(start + pageSize, this.results.size());
+
+        for (int i = start; i < end; i++) {
+            int index = i - start;
+            Station station = this.results.get(i);
+            int y = listTop + index * itemH;
+
+            Button addBtn = Button.builder(
+                    Component.translatable("gui.netmusicradio.search.add"),
+                    b -> selectStation(station))
+                    .pos(this.leftPos + w - ADD_BTN_RIGHT_PAD, y + (itemH - ADD_BTN_HEIGHT) / 2)
+                    .size(ADD_BTN_WIDTH, ADD_BTN_HEIGHT).build();
+            this.addRenderableWidget(addBtn);
         }
     }
 
-    private void updateFilteredCountries() {
-        if (!this.countryDropdownOpen) return;
-        String query = this.countrySearchField.getValue().trim().toLowerCase();
-        List<String> all = StationDatabase.getCountries();
-        if (query.isBlank()) {
-            this.filteredCountries = new ArrayList<>(all);
-        } else {
-            List<String> filtered = new ArrayList<>();
-            for (String c : all) {
-                if (c.toLowerCase().contains(query)) {
-                    filtered.add(c);
-                }
-            }
-            this.filteredCountries = filtered;
-        }
-        if (this.clearBtn != null) {
-            this.clearBtn.visible = !this.selectedCountry.isBlank();
-        }
-        this.countryScrollOffset = 0;
+    private void rebuildNav() {
+        int w = getPanelWidth();
+        int h = getPanelHeight();
+        int topRowY = this.topPos + h - FOOTER_HEIGHT + 4;
+        int bottomRowY = this.topPos + h - BTN_HEIGHT - 4;
+
+        int navBtnW = (w - NAV_GAP * 2) / 3;
+
+        Button previous = Button.builder(
+                Component.translatable("gui.netmusic.big_megaphone.page.previous"),
+                b -> doPrevious())
+                .pos(this.leftPos, topRowY).size(navBtnW, BTN_HEIGHT).build();
+        previous.active = this.page > 0 && !this.loading && !this.results.isEmpty();
+        this.addRenderableWidget(previous);
+
+        int maxPage = getMaxPage();
+        String pageHint = (this.results.isEmpty() ? 0 : this.page + 1) + "/" + (maxPage + 1);
+        this.pageField = new EditBox(this.font, this.leftPos + navBtnW + NAV_GAP, topRowY,
+                navBtnW, BTN_HEIGHT, Component.literal(pageHint));
+        this.pageField.setMaxLength(8);
+        this.pageField.setValue("");
+        this.pageField.setHint(Component.literal(pageHint));
+        this.pageField.setResponder(s -> {});
+        this.pageField.setFilter(s -> s.isEmpty() || s.matches("\\d+"));
+        this.pageField.setFormatter((s, i) -> {
+            int textWidth = this.font.width(s);
+            int pad = Math.max(0, (navBtnW - textWidth) / 2);
+            return Component.literal(" ".repeat(pad) + s).getVisualOrderText();
+        });
+        this.addRenderableWidget(this.pageField);
+
+        Button next = Button.builder(
+                Component.translatable("gui.netmusic.big_megaphone.page.next"),
+                b -> doNext(maxPage))
+                .pos(this.leftPos + (navBtnW + NAV_GAP) * 2, topRowY).size(navBtnW, BTN_HEIGHT).build();
+        next.active = this.page < maxPage && !this.loading && !this.results.isEmpty();
+        this.addRenderableWidget(next);
+
+        int checkboxW = (int) (w * 0.5);
+        int backW = w - checkboxW - NAV_GAP;
+
+        this.onlineCheckbox = new Checkbox(
+                this.leftPos, bottomRowY,
+                checkboxW, BTN_HEIGHT,
+                Component.translatable("gui.netmusicradio.search.online_search"),
+                this.onlineSearch);
+        this.onlineCheckbox.visible = !dropdown.isOpen();
+        this.addRenderableWidget(this.onlineCheckbox);
+
+        this.addRenderableWidget(Button.builder(
+                Component.translatable("gui.netmusic.big_megaphone.back"),
+                b -> this.onClose())
+                .pos(this.leftPos + checkboxW + NAV_GAP, bottomRowY).size(backW, BTN_HEIGHT).build());
     }
 
-    private void selectCountry(String country) {
-        if (country == null || country.isBlank()) {
-            this.selectedCountry = "";
-        } else {
-            this.selectedCountry = country;
+    private void doNext(int maxPage) {
+        if (this.page < maxPage) {
+            this.page++;
+            rebuildListButtons();
         }
-        closeCountryDropdown();
-        rebuildListButtons();
-        syncOnlineCheckbox();
     }
+
+    private void doPrevious() {
+        if (this.page > 0) {
+            this.page--;
+            rebuildListButtons();
+        }
+    }
+
+    // ===== 搜索 =====
 
     private void doSearch() {
         String q = this.searchField.getValue().trim();
@@ -215,179 +286,64 @@ public class RadioSearchScreen extends Screen {
         this.results.clear();
 
         if (this.onlineSearch) {
-            new Thread(() -> {
-                List<Station> found = RadioBrowserClient.search(q, country, 50);
-                List<Station> filtered = new ArrayList<>();
-                for (Station s : found) {
-                    if (s == null || s.url == null || s.url.isBlank()) continue;
-                    if (!BigMegaphoneUtilProxy.isValidStreamUrl(s.url)) continue;
-                    filtered.add(s);
-                }
-                if (this.minecraft != null) {
-                    this.minecraft.execute(() -> {
-                        this.loading = false;
-                        this.results = filtered;
-                        if (this.results.isEmpty()) {
-                            this.statusMessage = Component.translatable("gui.netmusicradio.search.no_results").getString();
-                        } else {
-                            this.statusMessage = Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
-                        }
-                        rebuildListButtons();
-                    });
-                }
-            }, "NetMusic-RadioSearch").start();
+            searchOnline(q, country);
         } else {
-            if (!StationDatabase.isLoaded()) {
-                StationDatabase.ensureLoadedAsync();
-                this.statusMessage = Component.translatable("gui.netmusicradio.search.loading_local").getString();
-                this.loading = false;
-                this.results.clear();
-                this.page = 0;
-                rebuildListButtons();
-                return;
+            searchLocal(q, country);
+        }
+    }
+
+    private void searchOnline(String q, String country) {
+        new Thread(() -> {
+            List<Station> found = RadioBrowserClient.search(q, country, SEARCH_RESULT_LIMIT);
+            List<Station> filtered = filterValidStations(found);
+            if (this.minecraft != null) {
+                this.minecraft.execute(() -> {
+                    this.loading = false;
+                    this.results = filtered;
+                    this.statusMessage = this.results.isEmpty()
+                            ? Component.translatable("gui.netmusicradio.search.no_results").getString()
+                            : Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
+                    rebuildListButtons();
+                });
             }
-            List<Station> found = StationDatabase.search(q, country, 50);
-            List<Station> filtered = new ArrayList<>();
-            for (Station s : found) {
-                if (s == null || s.url == null || s.url.isBlank()) continue;
-                if (!BigMegaphoneUtilProxy.isValidStreamUrl(s.url)) continue;
-                filtered.add(s);
-            }
+        }, "NetMusic-RadioSearch").start();
+    }
+
+    private void searchLocal(String q, String country) {
+        if (!StationDatabase.isLoaded()) {
+            StationDatabase.ensureLoadedAsync();
+            this.statusMessage = Component.translatable("gui.netmusicradio.search.loading_local").getString();
             this.loading = false;
-            this.results = filtered;
-            if (StationDatabase.getLoadError() != null) {
-                this.statusMessage = StationDatabase.getLoadError();
-            } else if (this.results.isEmpty()) {
-                this.statusMessage = Component.translatable("gui.netmusicradio.search.no_results").getString();
-            } else {
-                this.statusMessage = Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
-            }
+            this.results.clear();
+            this.page = 0;
             rebuildListButtons();
+            return;
         }
-    }
-
-    private void rebuildListButtons() {
-        this.clearWidgets();
-
-        int w = getPanelWidth();
-        int searchW = (int) (w * 0.55);
-        int countryW = w - searchW - 4;
-
-        this.addRenderableWidget(this.searchField);
-
-        String countryLabel;
-        if (this.selectedCountry.isBlank()) {
-            countryLabel = Component.translatable("gui.netmusicradio.search.country").getString();
+        List<Station> found = StationDatabase.search(q, country, SEARCH_RESULT_LIMIT);
+        List<Station> filtered = filterValidStations(found);
+        this.loading = false;
+        this.results = filtered;
+        if (StationDatabase.getLoadError() != null) {
+            this.statusMessage = StationDatabase.getLoadError();
+        } else if (this.results.isEmpty()) {
+            this.statusMessage = Component.translatable("gui.netmusicradio.search.no_results").getString();
         } else {
-            countryLabel = this.selectedCountry;
+            this.statusMessage = Component.translatable("gui.netmusicradio.search.found", this.results.size()).getString();
         }
-        this.countryBtn = Button.builder(
-                Component.literal(countryLabel + " \u25BE"),
-                b -> {
-                    if (this.countryDropdownOpen) {
-                        closeCountryDropdown();
-                    } else {
-                        openCountryDropdown();
-                    }
-                })
-                .pos(this.leftPos + searchW + 4, this.topPos + 8).size(countryW, 18).build();
-        this.addRenderableWidget(this.countryBtn);
-
-        int btnW = (w - 2) / 2;
-        this.searchBtn = Button.builder(
-                Component.translatable("gui.netmusicradio.search.button"),
-                b -> doSearch())
-                .pos(this.leftPos, this.topPos + 30).size(btnW, 18).build();
-        this.searchBtn.visible = !this.countryDropdownOpen;
-        this.addRenderableWidget(this.searchBtn);
-
-        this.onlineCheckbox = new Checkbox(
-                this.leftPos + btnW + 2, this.topPos + 30,
-                btnW, 18,
-                Component.translatable("gui.netmusicradio.search.online_search"),
-                this.onlineSearch);
-        this.onlineCheckbox.visible = !this.countryDropdownOpen;
-        this.addRenderableWidget(this.onlineCheckbox);
-
-        if (this.countryDropdownOpen && this.countrySearchField != null) {
-            int dropdownX = this.countryBtn.getX();
-            int dropdownY = this.countryBtn.getY() + this.countryBtn.getHeight() + 2;
-            String clearText = Component.translatable("gui.netmusicradio.search.country.clear").getString();
-            int clearBtnW = this.font.width(clearText) + 8;
-            this.countrySearchField.setX(dropdownX + 2);
-            this.countrySearchField.setY(dropdownY + 2);
-            this.countrySearchField.setWidth(countryW - clearBtnW - 6);
-            this.countrySearchField.visible = true;
-            if (this.clearBtn != null) {
-                this.clearBtn.setX(dropdownX + countryW - clearBtnW - 2);
-                this.clearBtn.setY(dropdownY + 2);
-                this.clearBtn.visible = !this.selectedCountry.isBlank();
-                this.addRenderableWidget(this.clearBtn);
-            }
-        }
-
-        int listTop = this.topPos + HEADER_HEIGHT;
-        int itemH = getItemHeight();
-        int pageSize = getPageSize();
-
-        int start = this.page * pageSize;
-        int end = Math.min(start + pageSize, this.results.size());
-
-        for (int i = start; i < end; i++) {
-            int index = i - start;
-            Station station = this.results.get(i);
-            int y = listTop + index * itemH;
-
-            Button addBtn = Button.builder(
-                    Component.translatable("gui.netmusicradio.search.add"),
-                    b -> selectStation(station))
-                    .pos(this.leftPos + w - 44, y + (itemH - 16) / 2).size(42, 16).build();
-            this.addRenderableWidget(addBtn);
-        }
-
-        int navY = listTop + pageSize * itemH + 4;
-        int navBtnW = (w - 4) / 3;
-
-        Button previous = Button.builder(
-                Component.translatable("gui.netmusic.big_megaphone.page.previous"),
-                b -> doPrevious())
-                .pos(this.leftPos, navY).size(navBtnW, 18).build();
-        previous.active = this.page > 0 && !this.loading && !this.results.isEmpty();
-        this.addRenderableWidget(previous);
-
-        this.addRenderableWidget(Button.builder(
-                Component.translatable("gui.netmusic.big_megaphone.back"),
-                b -> this.onClose())
-                .pos(this.leftPos + navBtnW + 2, navY).size(navBtnW, 18).build());
-
-        int maxPage = getMaxPage();
-        Button next = Button.builder(
-                Component.translatable("gui.netmusic.big_megaphone.page.next"),
-                b -> doNext(maxPage))
-                .pos(this.leftPos + (navBtnW + 2) * 2, navY).size(navBtnW, 18).build();
-        next.active = this.page < maxPage && !this.loading && !this.results.isEmpty();
-        this.addRenderableWidget(next);
+        rebuildListButtons();
     }
 
-    private void doNext(int maxPage) {
-        if (this.page < maxPage) {
-            this.page++;
-            rebuildListButtons();
+    private List<Station> filterValidStations(List<Station> stations) {
+        List<Station> filtered = new ArrayList<>();
+        for (Station s : stations) {
+            if (s == null || s.url == null || s.url.isBlank()) continue;
+            if (!BigMegaphoneUtilProxy.isValidStreamUrl(s.url)) continue;
+            filtered.add(s);
         }
+        return filtered;
     }
 
-    private void doPrevious() {
-        if (this.page > 0) {
-            this.page--;
-            rebuildListButtons();
-        }
-    }
-
-    private int getMaxPage() {
-        int size = this.results.size();
-        int pageSize = getPageSize();
-        return size == 0 ? 0 : (size - 1) / pageSize;
-    }
+    // ===== 选中电台 =====
 
     private void selectStation(Station station) {
         String candidate = station.url == null ? "" : station.url.trim();
@@ -399,7 +355,6 @@ public class RadioSearchScreen extends Screen {
         String displayName = (station.name == null || station.name.isBlank()) ? candidate : station.name;
 
         CustomBigMegaphoneScreen targetScreen = null;
-
         if (parentScreen instanceof CustomBigMegaphoneScreen screen) {
             targetScreen = screen;
         }
@@ -413,43 +368,16 @@ public class RadioSearchScreen extends Screen {
         }
     }
 
+    // ===== 事件处理 =====
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.countryDropdownOpen) {
-            int dropdownX = this.countryBtn.getX();
-            int dropdownY = this.countryBtn.getY() + this.countryBtn.getHeight() + 2;
-            int dropdownW = this.countryBtn.getWidth();
-            int dropdownH = getDropdownHeight();
-
-            if (mouseX >= dropdownX && mouseX <= dropdownX + dropdownW
-                    && mouseY >= dropdownY && mouseY <= dropdownY + dropdownH) {
-
-                int searchBottom = dropdownY + DROPDOWN_SEARCH_HEIGHT;
-                if (mouseY >= dropdownY && mouseY <= searchBottom && this.countrySearchField != null) {
-                    if (this.clearBtn != null && this.clearBtn.visible
-                            && mouseX >= this.clearBtn.getX() && mouseX <= this.clearBtn.getX() + this.clearBtn.getWidth()
-                            && mouseY >= this.clearBtn.getY() && mouseY <= this.clearBtn.getY() + this.clearBtn.getHeight()) {
-                        return super.mouseClicked(mouseX, mouseY, button);
-                    }
-                    this.setFocused(this.countrySearchField);
-                    return this.countrySearchField.mouseClicked(mouseX, mouseY, button);
-                }
-
-                int relY = (int) mouseY - dropdownY - DROPDOWN_SEARCH_HEIGHT;
-                if (relY >= 0) {
-                    int itemIndex = relY / DROPDOWN_ITEM_HEIGHT + this.countryScrollOffset;
-                    if (itemIndex >= 0 && itemIndex < this.filteredCountries.size()) {
-                        selectCountry(this.filteredCountries.get(itemIndex));
-                        return true;
-                    }
-                }
-
+        if (dropdown.isOpen()) {
+            if (dropdown.mouseClicked(mouseX, mouseY, button)) {
                 return true;
-            } else {
-                closeCountryDropdown();
-                syncOnlineCheckbox();
-                return super.mouseClicked(mouseX, mouseY, button);
             }
+            syncOnlineCheckbox();
+            return super.mouseClicked(mouseX, mouseY, button);
         }
         syncOnlineCheckbox();
         return super.mouseClicked(mouseX, mouseY, button);
@@ -457,34 +385,17 @@ public class RadioSearchScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        if (this.countryDropdownOpen) {
-            int dropdownX = this.countryBtn.getX();
-            int dropdownY = this.countryBtn.getY() + this.countryBtn.getHeight() + 2;
-            int dropdownW = this.countryBtn.getWidth();
-            int dropdownH = getDropdownHeight();
-
-            if (mouseX >= dropdownX && mouseX <= dropdownX + dropdownW
-                    && mouseY >= dropdownY && mouseY <= dropdownY + dropdownH) {
-                int maxScroll = Math.max(0, this.filteredCountries.size() - DROPDOWN_VISIBLE_ITEMS);
-                if (delta > 0 && this.countryScrollOffset > 0) {
-                    this.countryScrollOffset--;
-                    return true;
-                } else if (delta < 0 && this.countryScrollOffset < maxScroll) {
-                    this.countryScrollOffset++;
-                    return true;
-                }
-                return false;
-            }
+        if (dropdown.isOpen() && dropdown.mouseScrolled(mouseX, mouseY, delta)) {
+            return true;
         }
-
         if (this.results.isEmpty()) return false;
         int maxPage = getMaxPage();
-        if (delta > 0 && this.page < maxPage) {
-            this.page++;
+        if (delta > 0 && this.page > 0) {
+            this.page--;
             rebuildListButtons();
             return true;
-        } else if (delta < 0 && this.page > 0) {
-            this.page--;
+        } else if (delta < 0 && this.page < maxPage) {
+            this.page++;
             rebuildListButtons();
             return true;
         }
@@ -493,28 +404,12 @@ public class RadioSearchScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (this.countryDropdownOpen) {
-            if (keyCode == 266) {
-                if (this.countryScrollOffset > 0) {
-                    this.countryScrollOffset--;
-                    return true;
-                }
-            } else if (keyCode == 267) {
-                int maxScroll = Math.max(0, this.filteredCountries.size() - DROPDOWN_VISIBLE_ITEMS);
-                if (this.countryScrollOffset < maxScroll) {
-                    this.countryScrollOffset++;
-                    return true;
-                }
-            } else if (keyCode == 268) {
-                closeCountryDropdown();
-                return true;
-            }
-            if (this.countrySearchField != null && this.getFocused() == this.countrySearchField) {
-                if (this.countrySearchField.keyPressed(keyCode, scanCode, modifiers)) {
-                    updateFilteredCountries();
-                    return true;
-                }
-            }
+        if (dropdown.isOpen() && dropdown.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
+        if (this.getFocused() == this.pageField && (keyCode == 257 || keyCode == 335)) {
+            jumpToPage();
+            return true;
         }
         if (keyCode == 264 && this.page < getMaxPage()) {
             this.page++;
@@ -528,11 +423,27 @@ public class RadioSearchScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    private void jumpToPage() {
+        if (this.pageField == null) return;
+        String value = this.pageField.getValue().trim();
+        if (value.isEmpty()) return;
+        try {
+            int target = Integer.parseInt(value) - 1;
+            int maxPage = getMaxPage();
+            if (target < 0) target = 0;
+            if (target > maxPage) target = maxPage;
+            this.page = target;
+        } catch (NumberFormatException ignored) {
+        }
+        this.pageField.setValue("");
+        rebuildListButtons();
+    }
+
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (this.countryDropdownOpen) {
+        if (dropdown.isOpen()) {
             boolean result = super.charTyped(codePoint, modifiers);
-            updateFilteredCountries();
+            dropdown.updateFiltered();
             return result;
         }
         return super.charTyped(codePoint, modifiers);
@@ -545,26 +456,40 @@ public class RadioSearchScreen extends Screen {
         }
     }
 
+    // ===== 渲染 =====
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         this.renderBackground(graphics);
 
-        int w = getPanelWidth();
-        int h = getPanelHeight();
-        int lx = (this.width - w) / 2;
-        int ly = (this.height - h) / 2;
+        renderBars(graphics);
+        renderList(graphics);
 
-        graphics.fill(lx, ly, lx + w, ly + h, 0xFF1A1A1A);
-        graphics.fill(lx, ly, lx + w, ly + 1, 0xFF555555);
-        graphics.fill(lx, ly + h - 1, lx + w, ly + h, 0xFF555555);
+        super.render(graphics, mouseX, mouseY, partialTicks);
 
-        graphics.drawCenteredString(this.font, this.title, this.width / 2, ly + 2, 0xFFFFFF);
+        graphics.drawCenteredString(this.font, this.title, this.width / 2, TITLE_Y, 0xFFFFFF);
 
         if (!this.statusMessage.isBlank()) {
-            graphics.drawString(this.font, this.statusMessage, lx, ly + 48, 0xAAAAAA, false);
+            graphics.drawCenteredString(this.font, this.statusMessage, this.width / 2, SUBTITLE_Y, 0xCCCCCC);
         }
 
-        int listTop = ly + HEADER_HEIGHT;
+        dropdown.render(graphics, mouseX, mouseY, partialTicks);
+    }
+
+    private void renderBars(GuiGraphics graphics) {
+        int h = getPanelHeight();
+
+        graphics.fill(0, 0, this.width, TITLE_BAR_HEIGHT, 0xFF333333);
+        graphics.fill(0, TITLE_BAR_HEIGHT, this.width, TITLE_BAR_HEIGHT + 1, 0xFF555555);
+
+        graphics.fill(0, h - FOOTER_BAR_HEIGHT, this.width, h, 0xFF333333);
+        graphics.fill(0, h - FOOTER_BAR_HEIGHT - 1, this.width, h - FOOTER_BAR_HEIGHT, 0xFF555555);
+    }
+
+    private void renderList(GuiGraphics graphics) {
+        int w = getPanelWidth();
+        int lx = this.leftPos;
+        int listTop = getListTop();
         int itemH = getItemHeight();
         int pageSize = getPageSize();
         int logoS = getLogoSize();
@@ -583,115 +508,374 @@ public class RadioSearchScreen extends Screen {
 
             int logoX = lx + 4;
             int logoY = y + innerPad;
-            String logoUrl = station.logoUrl;
-            if (logoUrl != null && !logoUrl.isBlank()) {
-                ResourceLocation logoRl = LogoManager.getInstance().getLogo(logoUrl);
-                if (logoRl != null) {
-                    graphics.blit(logoRl, logoX, logoY, logoS, logoS, 0, 0, 64, 64, 64, 64);
-                } else {
-                    LogoManager.getInstance().loadLogo(logoUrl);
-                    graphics.fill(logoX, logoY, logoX + logoS, logoY + logoS, 0xFF222222);
-                }
-            } else {
-                graphics.fill(logoX, logoY, logoX + logoS, logoY + logoS, 0xFF222222);
-            }
-
-            String name = station.name == null || station.name.isBlank() ? station.url : station.name;
-            int maxNameLen = (w - logoS - 20) / 6;
-            String displayName = name.length() > maxNameLen ? name.substring(0, Math.max(0, maxNameLen - 3)) + "..." : name;
-            graphics.drawString(this.font, displayName, logoX + logoS + 4, y + (itemH / 2) - 6, 0xFFFFFF);
-
-            String country = station.country != null ? station.country : "";
-            String desc = station.description != null ? station.description : "";
-            String secondary = !desc.isBlank() ? desc : (!country.isBlank() ? country :
-                    Component.translatable("gui.netmusicradio.search.unknown_region").getString());
-            int maxCtryLen = (w - logoS - 20) / 6;
-            if (secondary.length() > maxCtryLen) {
-                secondary = secondary.substring(0, Math.max(0, maxCtryLen - 3)) + "...";
-            }
-            graphics.drawString(this.font, secondary, logoX + logoS + 4, y + (itemH / 2) + 6, 0xAAAAAA);
-        }
-
-        super.render(graphics, mouseX, mouseY, partialTicks);
-
-        if (this.countryDropdownOpen) {
-            int dropdownX = this.countryBtn.getX();
-            int dropdownY = this.countryBtn.getY() + this.countryBtn.getHeight() + 2;
-            int dropdownW = this.countryBtn.getWidth();
-            int dropdownH = getDropdownHeight();
-
-            graphics.fill(dropdownX, dropdownY, dropdownX + dropdownW, dropdownY + dropdownH, 0xFF252525);
-            graphics.fill(dropdownX, dropdownY, dropdownX + dropdownW, dropdownY + 1, 0xFF555555);
-            graphics.fill(dropdownX, dropdownY + dropdownH - 1, dropdownX + dropdownW, dropdownY + dropdownH, 0xFF555555);
-
-            if (this.countrySearchField != null) {
-                this.countrySearchField.render(graphics, mouseX, mouseY, partialTicks);
-            }
-
-            int listStartY = dropdownY + DROPDOWN_SEARCH_HEIGHT;
-            int visibleCount = Math.min(DROPDOWN_VISIBLE_ITEMS, this.filteredCountries.size());
-
-            for (int i = 0; i < visibleCount; i++) {
-                int idx = i + this.countryScrollOffset;
-                if (idx >= this.filteredCountries.size()) break;
-                String countryName = this.filteredCountries.get(idx);
-                int itemY = listStartY + i * DROPDOWN_ITEM_HEIGHT;
-
-                boolean selected = countryName.equals(this.selectedCountry);
-                if (selected) {
-                    graphics.fill(dropdownX + 1, itemY, dropdownX + dropdownW - 1, itemY + DROPDOWN_ITEM_HEIGHT - 1, 0xFF3A5A3A);
-                }
-
-                int maxLen = (dropdownW - 10) / 6;
-                String display = countryName.length() > maxLen
-                        ? countryName.substring(0, Math.max(0, maxLen - 3)) + "..."
-                        : countryName;
-                graphics.drawString(this.font, display, dropdownX + 4, itemY + (DROPDOWN_ITEM_HEIGHT - 9) / 2,
-                        selected ? 0xFFFFFF : 0xD0D0D0);
-            }
-
-            if (this.filteredCountries.isEmpty()) {
-                if (!StationDatabase.isLoaded()) {
-                    String loading = Component.translatable("gui.netmusicradio.search.loading_local").getString();
-                    graphics.drawString(this.font, loading, dropdownX + 4, listStartY + 4, 0x888888);
-                } else {
-                    String noResult = Component.translatable("gui.netmusicradio.search.no_results").getString();
-                    graphics.drawString(this.font, noResult, dropdownX + 4, listStartY + 4, 0x888888);
-                }
-            }
-
-            if (this.filteredCountries.size() > DROPDOWN_VISIBLE_ITEMS) {
-                int trackH = DROPDOWN_VISIBLE_ITEMS * DROPDOWN_ITEM_HEIGHT;
-                graphics.fill(dropdownX + dropdownW - 3, listStartY, dropdownX + dropdownW - 1, listStartY + trackH, 0xFF1A1A1A);
-                int thumbH = Math.max(4, trackH * DROPDOWN_VISIBLE_ITEMS / this.filteredCountries.size());
-                int thumbY = listStartY + (this.countryScrollOffset * DROPDOWN_ITEM_HEIGHT * DROPDOWN_VISIBLE_ITEMS) / this.filteredCountries.size();
-                thumbY = Math.min(thumbY, listStartY + trackH - thumbH);
-                graphics.fill(dropdownX + dropdownW - 3, thumbY, dropdownX + dropdownW - 1, thumbY + thumbH, 0xFF666666);
-            }
+            renderStationLogo(graphics, station, logoX, logoY, logoS);
+            renderStationInfo(graphics, station, lx, y, w, logoS, itemH);
         }
     }
+
+    private void renderStationLogo(GuiGraphics graphics, Station station, int logoX, int logoY, int logoS) {
+        String logoUrl = station.logoUrl;
+        if (logoUrl != null && !logoUrl.isBlank()) {
+            ResourceLocation logoRl = LogoManager.getInstance().getLogo(logoUrl);
+            if (logoRl != null) {
+                graphics.blit(logoRl, logoX, logoY, logoS, logoS, 0, 0,
+                        LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE, LOGO_TEXTURE_SIZE);
+            } else {
+                LogoManager.getInstance().loadLogo(logoUrl);
+                graphics.fill(logoX, logoY, logoX + logoS, logoY + logoS, 0xFF222222);
+            }
+        } else {
+            graphics.fill(logoX, logoY, logoX + logoS, logoY + logoS, 0xFF222222);
+        }
+    }
+
+    private void renderStationInfo(GuiGraphics graphics, Station station, int lx, int y, int w, int logoS, int itemH) {
+        int textX = lx + 4 + logoS + 4;
+        int maxLen = (w - logoS - LOGO_TEXT_PAD) / CHAR_WIDTH_ESTIMATE;
+
+        String name = station.name == null || station.name.isBlank() ? station.url : station.name;
+        String displayName = name.length() > maxLen ? name.substring(0, Math.max(0, maxLen - 3)) + "..." : name;
+        graphics.drawString(this.font, displayName, textX, y + (itemH / 2) - 6, 0xFFFFFF);
+
+        String country = station.country != null ? station.country : "";
+        String desc = station.description != null ? station.description : "";
+        String secondary = !desc.isBlank() ? desc : (!country.isBlank() ? country :
+                Component.translatable("gui.netmusicradio.search.unknown_region").getString());
+        if (secondary.length() > maxLen) {
+            secondary = secondary.substring(0, Math.max(0, maxLen - 3)) + "...";
+        }
+        graphics.drawString(this.font, secondary, textX, y + (itemH / 2) + 6, 0xAAAAAA);
+    }
+
+    // ===== tick =====
 
     @Override
     public void tick() {
         super.tick();
         LogoManager.getInstance().tick();
+        if (this.autoSearchPending && StationDatabase.isLoaded()) {
+            this.autoSearchPending = false;
+            tryAutoSelectCountry();
+        }
         if (!this.onlineSearch
                 && this.statusMessage.equals(Component.translatable("gui.netmusicradio.search.loading_local").getString())
                 && StationDatabase.isLoaded()) {
             this.statusMessage = "";
             rebuildListButtons();
         }
-        if (this.countryDropdownOpen && StationDatabase.isLoaded() && !this.countriesLoaded) {
-            this.countriesLoaded = true;
-            this.filteredCountries = new ArrayList<>(StationDatabase.getCountries());
-            if (this.countrySearchField != null) {
-                updateFilteredCountries();
+        dropdown.tick();
+    }
+
+    private void tryAutoSelectCountry() {
+        String systemCountry = Locale.getDefault().getDisplayCountry(Locale.ENGLISH);
+        if (systemCountry == null || systemCountry.isBlank()) return;
+
+        List<String> available = StationDatabase.getCountries();
+        String matched = null;
+        String systemLower = systemCountry.toLowerCase(Locale.ROOT);
+
+        for (String c : available) {
+            String cLower = c.toLowerCase(Locale.ROOT);
+            if (cLower.equals(systemLower)) {
+                matched = c;
+                break;
             }
+        }
+
+        if (matched == null) {
+            for (String c : available) {
+                String cLower = c.toLowerCase(Locale.ROOT);
+                if (cLower.contains(systemLower) || systemLower.contains(cLower)) {
+                    matched = c;
+                    break;
+                }
+            }
+        }
+
+        if (matched != null) {
+            this.selectedCountry = matched;
+            doSearch();
         }
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    // ===== 国家/地区下拉菜单 =====
+
+    private class CountryDropdown {
+        private static final int ITEM_HEIGHT = 18;
+        private static final int VISIBLE_ITEMS = 6;
+        private static final int SEARCH_HEIGHT = 24;
+        private static final int DROPDOWN_OFFSET_Y = 2;
+
+        private boolean open = false;
+        private int scrollOffset = 0;
+        private boolean countriesLoaded = false;
+        private List<String> filteredCountries = new ArrayList<>();
+        private EditBox searchField;
+        private Button clearBtn;
+
+        boolean isOpen() {
+            return open;
+        }
+
+        String getButtonLabel() {
+            if (selectedCountry.isBlank()) {
+                return Component.translatable("gui.netmusicradio.search.country").getString();
+            }
+            return selectedCountry;
+        }
+
+        void toggle() {
+            if (open) {
+                close();
+            } else {
+                open();
+            }
+        }
+
+        void open() {
+            this.open = true;
+            this.scrollOffset = 0;
+            this.countriesLoaded = StationDatabase.isLoaded();
+            if (!StationDatabase.isLoaded()) {
+                StationDatabase.ensureLoadedAsync();
+            }
+            this.filteredCountries = new ArrayList<>(StationDatabase.getCountries());
+            rebuildListButtons();
+            setFocused(this.searchField);
+        }
+
+        void close() {
+            this.open = false;
+            this.countriesLoaded = false;
+            this.searchField = null;
+            this.clearBtn = null;
+            this.scrollOffset = 0;
+            this.filteredCountries.clear();
+            setFocused(RadioSearchScreen.this.searchField);
+            if (onlineCheckbox != null) onlineCheckbox.visible = true;
+            if (searchBtn != null) searchBtn.visible = true;
+        }
+
+        void rebuildWidgets() {
+            if (!open) return;
+            int dropdownX = countryBtn.getX();
+            int dropdownY = countryBtn.getY() + countryBtn.getHeight() + DROPDOWN_OFFSET_Y;
+            int dropdownW = countryBtn.getWidth();
+            String clearText = Component.translatable("gui.netmusicradio.search.country.clear").getString();
+            int clearBtnW = font.width(clearText) + 8;
+
+            if (searchField == null) {
+                searchField = new EditBox(font, dropdownX + 2, dropdownY + 2,
+                        dropdownW - clearBtnW - 6, SEARCH_HEIGHT - 4,
+                        Component.translatable("gui.netmusicradio.search.country.hint"));
+                searchField.setMaxLength(64);
+            } else {
+                searchField.setX(dropdownX + 2);
+                searchField.setY(dropdownY + 2);
+                searchField.setWidth(dropdownW - clearBtnW - 6);
+            }
+            searchField.visible = true;
+
+            if (clearBtn == null) {
+                clearBtn = Button.builder(Component.literal(clearText), b -> clear())
+                        .pos(dropdownX + dropdownW - clearBtnW - 2, dropdownY + 2)
+                        .size(clearBtnW, SEARCH_HEIGHT - 4).build();
+            } else {
+                clearBtn.setX(dropdownX + dropdownW - clearBtnW - 2);
+                clearBtn.setY(dropdownY + 2);
+            }
+            clearBtn.visible = !selectedCountry.isBlank();
+            addRenderableWidget(clearBtn);
+        }
+
+        void clear() {
+            selectedCountry = "";
+            if (clearBtn != null) clearBtn.visible = false;
+            if (searchField != null) {
+                searchField.setValue("");
+                updateFiltered();
+            }
+        }
+
+        void select(String country) {
+            selectedCountry = (country == null || country.isBlank()) ? "" : country;
+            close();
+            rebuildListButtons();
+            syncOnlineCheckbox();
+        }
+
+        void updateFiltered() {
+            if (!open) return;
+            String query = searchField != null ? searchField.getValue().trim().toLowerCase() : "";
+            List<String> all = StationDatabase.getCountries();
+            if (query.isBlank()) {
+                filteredCountries = new ArrayList<>(all);
+            } else {
+                List<String> filtered = new ArrayList<>();
+                for (String c : all) {
+                    if (c.toLowerCase().contains(query)) filtered.add(c);
+                }
+                filteredCountries = filtered;
+            }
+            if (clearBtn != null) clearBtn.visible = !selectedCountry.isBlank();
+            scrollOffset = 0;
+        }
+
+        int getHeight() {
+            return SEARCH_HEIGHT + VISIBLE_ITEMS * ITEM_HEIGHT + DROPDOWN_OFFSET_Y;
+        }
+
+        private int[] getBounds() {
+            return new int[]{
+                    countryBtn.getX(),
+                    countryBtn.getY() + countryBtn.getHeight() + DROPDOWN_OFFSET_Y,
+                    countryBtn.getWidth(),
+                    getHeight()
+            };
+        }
+
+        boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (!open) return false;
+            int[] b = getBounds();
+            int dx = b[0], dy = b[1], dw = b[2], dh = b[3];
+
+            if (mouseX < dx || mouseX > dx + dw || mouseY < dy || mouseY > dy + dh) {
+                close();
+                syncOnlineCheckbox();
+                return false;
+            }
+
+            int searchBottom = dy + SEARCH_HEIGHT;
+            if (mouseY >= dy && mouseY <= searchBottom && searchField != null) {
+                if (clearBtn != null && clearBtn.visible
+                        && mouseX >= clearBtn.getX() && mouseX <= clearBtn.getX() + clearBtn.getWidth()
+                        && mouseY >= clearBtn.getY() && mouseY <= clearBtn.getY() + clearBtn.getHeight()) {
+                    return false;
+                }
+                setFocused(searchField);
+                return searchField.mouseClicked(mouseX, mouseY, button);
+            }
+
+            int relY = (int) mouseY - dy - SEARCH_HEIGHT;
+            if (relY >= 0) {
+                int itemIndex = relY / ITEM_HEIGHT + scrollOffset;
+                if (itemIndex >= 0 && itemIndex < filteredCountries.size()) {
+                    select(filteredCountries.get(itemIndex));
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+            if (!open) return false;
+            int[] b = getBounds();
+            if (mouseX < b[0] || mouseX > b[0] + b[2] || mouseY < b[1] || mouseY > b[1] + b[3]) {
+                return false;
+            }
+            int maxScroll = Math.max(0, filteredCountries.size() - VISIBLE_ITEMS);
+            if (delta > 0 && scrollOffset > 0) {
+                scrollOffset--;
+                return true;
+            } else if (delta < 0 && scrollOffset < maxScroll) {
+                scrollOffset++;
+                return true;
+            }
+            return false;
+        }
+
+        boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            if (!open) return false;
+            if (keyCode == 266) {
+                if (scrollOffset > 0) {
+                    scrollOffset--;
+                    return true;
+                }
+            } else if (keyCode == 267) {
+                int maxScroll = Math.max(0, filteredCountries.size() - VISIBLE_ITEMS);
+                if (scrollOffset < maxScroll) {
+                    scrollOffset++;
+                    return true;
+                }
+            } else if (keyCode == 268) {
+                close();
+                return true;
+            }
+            if (searchField != null && getFocused() == searchField) {
+                if (searchField.keyPressed(keyCode, scanCode, modifiers)) {
+                    updateFiltered();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void tick() {
+            if (open && StationDatabase.isLoaded() && !countriesLoaded) {
+                countriesLoaded = true;
+                filteredCountries = new ArrayList<>(StationDatabase.getCountries());
+                if (searchField != null) updateFiltered();
+            }
+        }
+
+        void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+            if (!open) return;
+            int[] b = getBounds();
+            int dx = b[0], dy = b[1], dw = b[2], dh = b[3];
+
+            graphics.fill(dx, dy, dx + dw, dy + dh, 0xFF252525);
+            graphics.fill(dx, dy, dx + dw, dy + 1, 0xFF555555);
+            graphics.fill(dx, dy + dh - 1, dx + dw, dy + dh, 0xFF555555);
+
+            if (searchField != null) {
+                searchField.render(graphics, mouseX, mouseY, partialTicks);
+            }
+
+            int listStartY = dy + SEARCH_HEIGHT;
+            int visibleCount = Math.min(VISIBLE_ITEMS, filteredCountries.size());
+
+            for (int i = 0; i < visibleCount; i++) {
+                int idx = i + scrollOffset;
+                if (idx >= filteredCountries.size()) break;
+                String countryName = filteredCountries.get(idx);
+                int itemY = listStartY + i * ITEM_HEIGHT;
+
+                boolean selected = countryName.equals(selectedCountry);
+                if (selected) {
+                    graphics.fill(dx + 1, itemY, dx + dw - 1, itemY + ITEM_HEIGHT - 1, 0xFF3A5A3A);
+                }
+
+                int maxLen = (dw - 10) / CHAR_WIDTH_ESTIMATE;
+                String display = countryName.length() > maxLen
+                        ? countryName.substring(0, Math.max(0, maxLen - 3)) + "..."
+                        : countryName;
+                graphics.drawString(font, display, dx + 4, itemY + (ITEM_HEIGHT - FONT_HEIGHT) / 2,
+                        selected ? 0xFFFFFF : 0xD0D0D0);
+            }
+
+            if (filteredCountries.isEmpty()) {
+                if (!StationDatabase.isLoaded()) {
+                    String loading = Component.translatable("gui.netmusicradio.search.loading_local").getString();
+                    graphics.drawString(font, loading, dx + 4, listStartY + 4, 0x888888);
+                } else {
+                    String noResult = Component.translatable("gui.netmusicradio.search.no_results").getString();
+                    graphics.drawString(font, noResult, dx + 4, listStartY + 4, 0x888888);
+                }
+            }
+
+            if (filteredCountries.size() > VISIBLE_ITEMS) {
+                int trackH = VISIBLE_ITEMS * ITEM_HEIGHT;
+                graphics.fill(dx + dw - 3, listStartY, dx + dw - 1, listStartY + trackH, 0xFF1A1A1A);
+                int thumbH = Math.max(4, trackH * VISIBLE_ITEMS / filteredCountries.size());
+                int thumbY = listStartY + (scrollOffset * ITEM_HEIGHT * VISIBLE_ITEMS) / filteredCountries.size();
+                thumbY = Math.min(thumbY, listStartY + trackH - thumbH);
+                graphics.fill(dx + dw - 3, thumbY, dx + dw - 1, thumbY + thumbH, 0xFF666666);
+            }
+        }
     }
 }
