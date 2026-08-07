@@ -76,8 +76,9 @@ public final class StationDatabase {
                     String country = get(m, "country");
                     String logo = get(m, "logo_url");
                     String tags = get(m, "tags");
+                    String description = get(m, "description");
 
-                    list.add(new RadioBrowserClient.Station(name, url, country, logo));
+                    list.add(new RadioBrowserClient.Station(name, url, country, logo, description));
 
                     addToIndex(nameIdx, normalize(name), i);
                     addToIndex(ctryIdx, normalize(country), i);
@@ -172,6 +173,13 @@ public final class StationDatabase {
             return result.subList(0, limit);
         }
         return result;
+    }
+
+    public static List<String> getCountries() {
+        if (countryIndex == null) return Collections.emptyList();
+        List<String> countries = new ArrayList<>(countryIndex.keySet());
+        countries.sort(String.CASE_INSENSITIVE_ORDER);
+        return countries;
     }
 
     public static int size() {
