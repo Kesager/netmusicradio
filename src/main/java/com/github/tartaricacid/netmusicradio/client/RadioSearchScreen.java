@@ -34,6 +34,9 @@ public class RadioSearchScreen extends Screen {
     private static final int ADD_BTN_WIDTH = 42;
     private static final int ADD_BTN_HEIGHT = 16;
     private static final int ADD_BTN_RIGHT_PAD = 44;
+    private static final int FAVORITE_BTN_WIDTH = 20;
+    private static final int FAVORITE_BTN_HEIGHT = 16;
+    private static final int FAVORITES_BTN_WIDTH = 60;
     private static final int LOGO_TEXTURE_SIZE = 64;
     private static final int FONT_HEIGHT = 9;
     private static final int CHAR_WIDTH_ESTIMATE = 6;
@@ -61,6 +64,9 @@ public class RadioSearchScreen extends Screen {
     private boolean loading = false;
     private String statusMessage = "";
     private String selectedCountry = "";
+    private int hoveredItemIndex = -1;
+    private final List<Button> favoriteButtons = new ArrayList<>();
+    private final List<Station> favoriteButtonStations = new ArrayList<>();
 
     public RadioSearchScreen(Screen parent) {
         super(Component.translatable("gui.netmusicradio.preset_picker.title"));
@@ -130,6 +136,7 @@ public class RadioSearchScreen extends Screen {
 
         this.autoSearchPending = true;
         StationDatabase.ensureLoadedAsync();
+        FavoritesManager.load();
 
         rebuildListButtons();
     }
@@ -144,6 +151,8 @@ public class RadioSearchScreen extends Screen {
 
     private void rebuildListButtons() {
         this.clearWidgets();
+        this.favoriteButtons.clear();
+        this.favoriteButtonStations.clear();
         rebuildHeader();
         rebuildListItems();
         rebuildNav();
@@ -188,6 +197,19 @@ public class RadioSearchScreen extends Screen {
             int index = i - start;
             Station station = this.results.get(i);
             int y = listTop + index * itemH;
+
+            boolean isFav = FavoritesManager.isFavorite(station);
+            String favText = isFav ? "\u2605" : "\u2606";
+            int favBtnX = this.leftPos + w - ADD_BTN_RIGHT_PAD - FAVORITE_BTN_WIDTH - NAV_GAP;
+            Button favoriteBtn = Button.builder(
+                    Component.literal(favText),
+                    b -> toggleFavorite(station))
+                    .pos(favBtnX, y + (itemH - FAVORITE_BTN_HEIGHT) / 2)
+                    .size(FAVORITE_BTN_WIDTH, FAVORITE_BTN_HEIGHT).build();
+            favoriteBtn.visible = isFav;
+            this.addRenderableWidget(favoriteBtn);
+            this.favoriteButtons.add(favoriteBtn);
+            this.favoriteButtonStations.add(station);
 
             Button addBtn = Button.builder(
                     Component.translatable("gui.netmusicradio.search.add"),
@@ -237,7 +259,7 @@ public class RadioSearchScreen extends Screen {
         this.addRenderableWidget(next);
 
         int checkboxW = (int) (w * 0.5);
-        int backW = w - checkboxW - NAV_GAP;
+        int backW = w - checkboxW - NAV_GAP - FAVORITES_BTN_WIDTH - NAV_GAP;
 
         this.onlineCheckbox = new Checkbox(
                 this.leftPos, bottomRowY,
@@ -251,6 +273,12 @@ public class RadioSearchScreen extends Screen {
                 Component.translatable("gui.netmusic.big_megaphone.back"),
                 b -> this.onClose())
                 .pos(this.leftPos + checkboxW + NAV_GAP, bottomRowY).size(backW, BTN_HEIGHT).build());
+
+        this.addRenderableWidget(Button.builder(
+                Component.translatable("gui.netmusicradio.favorites.title"),
+                b -> openFavoritesScreen())
+                .pos(this.leftPos + checkboxW + NAV_GAP + backW + NAV_GAP, bottomRowY)
+                .size(FAVORITES_BTN_WIDTH, BTN_HEIGHT).build());
     }
 
     private void doNext(int maxPage) {
@@ -368,6 +396,40 @@ public class RadioSearchScreen extends Screen {
         }
     }
 
+    private void toggleFavorite(Station station) {
+        if (FavoritesManager.isFavorite(station)) {
+            FavoritesManager.removeFavorite(station);
+        } else {
+            FavoritesManager.addFavorite(station);
+        }
+        rebuildListButtons();
+    }
+
+    private void openFavoritesScreen() {
+        if (this.minecraft != null) {
+            this.minecraft.setScreen(new FavoritesScreen(this, this.parentScreen));
+        }
+    }
+
+    private int getHoveredItemIndex(double mouseX, double mouseY) {
+        int listTop = getListTop();
+        int listBottom = getListBottom();
+        int itemH = getItemHeight();
+        int pageSize = getPageSize();
+
+        if (mouseY < listTop || mouseY >= listBottom) return -1;
+        if (mouseX < this.leftPos || mouseX >= this.leftPos + getPanelWidth()) return -1;
+
+        int relY = (int) mouseY - listTop;
+        int index = relY / itemH;
+        if (index < 0 || index >= pageSize) return -1;
+
+        int start = this.page * pageSize;
+        if (start + index >= this.results.size()) return -1;
+
+        return index;
+    }
+
     // ===== 事件处理 =====
 
     @Override
@@ -461,6 +523,14 @@ public class RadioSearchScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         this.renderBackground(graphics);
+
+        this.hoveredItemIndex = getHoveredItemIndex(mouseX, mouseY);
+        for (int i = 0; i < this.favoriteButtons.size(); i++) {
+            Button btn = this.favoriteButtons.get(i);
+            Station station = this.favoriteButtonStations.get(i);
+            boolean isFav = FavoritesManager.isFavorite(station);
+            btn.visible = isFav || i == this.hoveredItemIndex;
+        }
 
         renderBars(graphics);
         renderList(graphics);

@@ -16,5 +16,8 @@
   "gui.netmusicradio.search.load_failed": "Failed to load presets",
   "gui.netmusicradio.search.empty_url": "Station URL is empty",
   "gui.netmusicradio.search.unknown_region": "Unknown",
-  "gui.netmusicradio.search.loading_local": "Loading local data, please try again..."
+  "gui.netmusicradio.search.loading_local": "Loading local data, please try again...",
+  "gui.netmusicradio.favorites.title": "Favorites",
+  "gui.netmusicradio.favorites.empty": "No favorites yet",
+  "gui.netmusicradio.favorites.back_to_search": "Back to Search"
 }

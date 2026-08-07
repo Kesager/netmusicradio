@@ -16,5 +16,8 @@
   "gui.netmusicradio.search.load_failed": "加载预设失败",
   "gui.netmusicradio.search.empty_url": "电台链接为空",
   "gui.netmusicradio.search.unknown_region": "未知地区",
-  "gui.netmusicradio.search.loading_local": "本地数据加载中，请稍后重试..."
+  "gui.netmusicradio.search.loading_local": "本地数据加载中，请稍后重试...",
+  "gui.netmusicradio.favorites.title": "收藏夹",
+  "gui.netmusicradio.favorites.empty": "收藏夹为空",
+  "gui.netmusicradio.favorites.back_to_search": "返回搜索"
 }
