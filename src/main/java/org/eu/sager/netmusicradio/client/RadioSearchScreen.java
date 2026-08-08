@@ -380,18 +380,26 @@ public class RadioSearchScreen extends Screen {
 
         String displayName = (station.name == null || station.name.isBlank()) ? candidate : station.name;
 
-        CustomBigMegaphoneScreen targetScreen = null;
-        if (parentScreen instanceof CustomBigMegaphoneScreen screen) {
-            targetScreen = screen;
-        }
+        CustomBigMegaphoneScreen targetScreen = findBigMegaphoneScreen();
 
         if (targetScreen != null) {
             targetScreen.setStation(displayName, candidate);
         }
 
         if (this.minecraft != null) {
-            this.minecraft.setScreen(this.parentScreen);
+            this.minecraft.setScreen(targetScreen != null ? targetScreen : this.parentScreen);
         }
+    }
+
+    public Screen getParentScreen() {
+        return parentScreen;
+    }
+
+    private CustomBigMegaphoneScreen findBigMegaphoneScreen() {
+        if (parentScreen instanceof CustomBigMegaphoneScreen screen) {
+            return screen;
+        }
+        return null;
     }
 
     private void toggleFavorite(Station station) {
